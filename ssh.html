@@ -13,14 +13,10 @@
             hostname: { value: "" },
             port: { value: "22" },
         },
-        //color: '#7fff00',
         label: function () {
-            return this.userlabel;
+            return this.userlabel || this.name || "ssh-conf";
         },
-        oneditsave: function(d) {
-            //let u = $("#node-config-input-name").val();
-            //let h = $("#node-config-input-hostname").val();
-            //this.userlabel = (u?u+"@":"")+ (h?h:"");
+        oneditsave: function() {
             this.userlabel = $("#node-config-input-name").val();
         }
     });
@@ -28,8 +24,8 @@
 
 <script type="text/html" data-template-name="ssh-conf">
     <div class="form-row">
-        <label for="node-config-input-name"><i class="fa fa-tag"></i> name</label>
-        <input type="text" id="node-config-input-name" placeholder="127.0.0.1">
+        <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-config-input-name" placeholder="my server">
     </div>
 
     <div class="form-row">
@@ -39,7 +35,7 @@
 
     <div class="form-row">
         <label for="node-config-input-port"><i class="fa fa-random"></i> Port</label>
-        <input type="text" id="node-config-input-port" placeholder="set default (22) or another port">
+        <input type="text" id="node-config-input-port" placeholder="22">
     </div>
 
     <div class="form-row">
@@ -53,40 +49,29 @@
     </div>
 
     <div class="form-row">
-        <label for="node-config-input-ssh"><i class="fa fa-podcast"></i> Ssh</label>
+        <label for="node-config-input-ssh"><i class="fa fa-podcast"></i> Private key</label>
         <input type="text" id="node-config-input-ssh" placeholder="/home/user/.ssh/id_rsa">
-    </div> 
+    </div>
+
     <div class="form-row">
-      <label for="node-config-input-passphrase"><i class="fa fa-key"></i> Key Passphrase</label>
-      <input type="checkbox" id="node-config-input-passphrase-checkbox" onchange="togglepassphrase()">
-      <input type="password" id="node-config-input-passphrase" disabled="true" style="display:none">
+      <label for="node-config-input-passphrase"><i class="fa fa-lock"></i> Key passphrase</label>
+      <input type="password" id="node-config-input-passphrase" placeholder="only for encrypted keys">
     </div>
 </script>
 
-<script type="text/x-red" data-help-name="ssh-conf">
-    <p> ssh configuration</p>
+<script type="text/html" data-help-name="ssh-conf">
+    <p>Static SSH server configuration.</p>
+    <p>Every value here can be overridden per message through <code>msg.ssh</code>
+    in the ssh-v3 node. Fields left empty can be provided entirely by the message.</p>
+    <h3>Properties</h3>
+    <dl class="message-properties">
+        <dt>Hostname <span class="property-type">string</span></dt><dd>host name or IP address.</dd>
+        <dt>Port <span class="property-type">number</span></dt><dd>defaults to 22.</dd>
+        <dt>Username / Password</dt><dd>login credentials.</dd>
+        <dt>Private key <span class="property-type">path</span></dt><dd>path, on the Node-RED host, to a private key file.</dd>
+        <dt>Key passphrase</dt><dd>passphrase of an encrypted private key.</dd>
+    </dl>
 </script>
-
-
-<script type="text/javascript">
-    function togglepassphrase() {
-        // checked = true menas passphrase disable = false
-        // checked = false menas passphrase disable = true
-        // so disable param was opposite of checked
-        let checked = document.getElementById('node-config-input-passphrase-checkbox').checked;
-        document.getElementById("node-config-input-passphrase").disabled = !checked;
-        if (checked){
-            document.getElementById("node-config-input-passphrase").style.display = 'inline';
-            document.getElementById("node-config-input-password").style.display = 'none';
-        }
-        else{
-            document.getElementById("node-config-input-passphrase").style.display= 'none'
-            document.getElementById("node-config-input-password").style.display = 'inline';
-        }
-    };
-</script>
-
-
 
 
 <script type="text/javascript">
@@ -95,8 +80,8 @@
         color: '#7fff00',
         defaults: {
             name: { value: "" },
-            conf: { value: "", type: "ssh-conf" },
-            debug: { value: false },
+            conf: { value: "", type: "ssh-conf", required: false },
+            keepOpen: { value: 60, validate: RED.validators.number(true) },
         },
 
         inputs: 1,
@@ -108,25 +93,69 @@
     });
 </script>
 
-<script type="text/x-red" data-template-name="ssh-v3">
-    
+<script type="text/html" data-template-name="ssh-v3">
     <div class="form-row">
         <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
         <input type="text" id="node-input-name" placeholder="Name">
     </div>
 
     <div class="form-row">
-        <label for="node-input-conf"><i class="fa fa-globe"></i> server</label>
+        <label for="node-input-conf"><i class="fa fa-globe"></i> Server</label>
         <input type="text" id="node-input-conf">
     </div>
 
-    <!-- <div class="form-row">
-        <label for="node-input-debug"><i class="fa fa-bug"></i> Debug</label>
-        <input type="checkbox" id="node-input-debug" placeholder="">
-    </div> -->
+    <div class="form-row">
+        <label for="node-input-keepOpen"><i class="fa fa-clock-o"></i> Keep open</label>
+        <input type="text" id="node-input-keepOpen" placeholder="60" style="width: 80px"> seconds idle (0 = close after each command)
+    </div>
 
+    <div class="form-tips">
+        The server is optional: connection settings can also be sent in <code>msg.ssh</code>,
+        overriding the values of the selected server.
+    </div>
 </script>
 
-<script type="text/x-red" data-help-name="ssh-v3">
-    <p>ssh connection</p>
+<script type="text/html" data-help-name="ssh-v3">
+    <p>Runs a command on a remote host over SSH.</p>
+
+    <h3>Inputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string</span></dt>
+        <dd>command to run.</dd>
+        <dt class="optional">ssh <span class="property-type">object</span></dt>
+        <dd>dynamic connection settings. Any property set here overrides the selected
+        server config; missing ones are taken from it. Supported properties:
+        <ul>
+            <li><code>host</code> (or <code>hostname</code>), <code>port</code></li>
+            <li><code>username</code>, <code>password</code></li>
+            <li><code>privateKey</code> &ndash; key content (string or Buffer)</li>
+            <li><code>privateKeyPath</code> &ndash; path to a key file</li>
+            <li><code>passphrase</code> &ndash; for encrypted keys</li>
+            <li><code>readyTimeout</code>, <code>keepaliveInterval</code>, <code>keepaliveCountMax</code> (ms / count)</li>
+        </ul>
+        </dd>
+    </dl>
+
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>session <span class="property-type">object</span></dt>
+        <dd><code>code</code> exit code, <code>signal</code>, <code>stdout</code> and
+        <code>stderr</code> (arrays of chunks), and <code>host</code> (<code>user@host:port</code>).</dd>
+    </dl>
+
+    <h3>Details</h3>
+    <p>Connections are reused per destination and credentials, and closed after being idle for
+    <i>Keep open</i> seconds. A dropped connection is re-opened automatically on the next message.
+    Commands sent to the same connection run one at a time.</p>
+    <p><b>Note:</b> when <code>msg.ssh.host</code> is set and the node also has a server selected,
+    that server's credentials are used for the new host unless <code>msg.ssh</code> provides its own.</p>
+
+    <h3>Example</h3>
+<pre>msg.payload = "uptime";
+msg.ssh = {
+    host: "10.0.0.5",
+    username: "admin",
+    password: "secret"
+};
+return msg;</pre>
 </script>

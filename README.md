@@ -41,6 +41,35 @@ npm i node-red-contrib-ssh-v3
 
 
 
+### dynamic configuration
+
+The `server` config node is optional. Any connection setting can be sent in `msg.ssh`;
+values present there override the selected server, missing ones are taken from it.
+
+```js
+msg.payload = "uptime";
+msg.ssh = {
+    host: "10.0.0.5",          // or "hostname"
+    port: 22,
+    username: "admin",
+    password: "secret",        // and/or:
+    privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----...",  // key content
+    privateKeyPath: "/home/user/.ssh/id_ed25519",          // or a path
+    passphrase: "key passphrase",
+    readyTimeout: 20000,       // ms
+    keepaliveInterval: 10000   // ms
+};
+return msg;
+```
+
+Output: `msg.session = { code, signal, stdout: [], stderr: [], host: "user@host:port" }`.
+
+Connections are reused per destination + credentials and closed after the node's
+*Keep open* idle time (0 = close after every command). Dropped connections are
+re-opened automatically on the next message. Errors (bad credentials, unreachable host,
+missing key file...) are reported through `done(err)`, so they can be handled with a
+`catch` node, and no longer crash Node-RED.
+
 ### credits
 
 source from [node-red-contrib-ssh](https://github.com/yroffin/node-red-contrib-ssh)
