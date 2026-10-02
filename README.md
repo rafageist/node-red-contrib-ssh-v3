@@ -41,34 +41,72 @@ npm i node-red-contrib-ssh-v3
 
 
 
-### dynamic configuration
+### configuration modes
 
-The `server` config node is optional. Any connection setting can be sent in `msg.ssh`;
-values present there override the selected server, missing ones are taken from it.
+**A. Static** – select an `ssh-conf` server and send the command:
 
 ```js
-msg.payload = "uptime";
+msg.payload = "uname -a";
+return msg;
+```
+
+**B. Dynamic** – no server needed; the target comes with each message, so one node can run
+commands on many hosts:
+
+```js
+msg.payload = "hostname";
 msg.ssh = {
-    host: "10.0.0.5",          // or "hostname"
+    host: "lab.vvm.sr",
     port: 22,
-    username: "admin",
-    password: "secret",        // and/or:
-    privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----...",  // key content
-    privateKeyPath: "/home/user/.ssh/id_ed25519",          // or a path
-    passphrase: "key passphrase",
-    readyTimeout: 20000,       // ms
-    keepaliveInterval: 10000   // ms
+    username: "root",
+    privateKeyPath: "/var/lib/odoo/.ssh/id_ed25519"
 };
 return msg;
 ```
 
-Output: `msg.session = { code, signal, stdout: [], stderr: [], host: "user@host:port" }`.
+**C. Hybrid** – the `ssh-conf` server provides defaults, `msg.ssh` overrides only some of them
+(here port, key/password are inherited from the server):
 
-Connections are reused per destination + credentials and closed after the node's
-*Keep open* idle time (0 = close after every command). Dropped connections are
-re-opened automatically on the next message. Errors (bad credentials, unreachable host,
-missing key file...) are reported through `done(err)`, so they can be handled with a
-`catch` node, and no longer crash Node-RED.
+```js
+msg.payload = "df -h";
+msg.ssh = { host: "host2.example.com", username: "deploy" };
+return msg;
+```
+
+`msg.ssh` properties: `host` (or `hostname`), `port`, `username`, `password`, `privateKey`
+(key content), `privateKeyPath`, `passphrase`, `readyTimeout`, `keepaliveInterval`, `keepaliveCountMax`.
+
+### precedence
+
+- effective options = `ssh-conf` values, overridden by each `msg.ssh` value that is set;
+  `undefined`, `null` and `""` in `msg.ssh` never erase a server value. `msg.ssh` is not modified.
+- private key: `msg.ssh.privateKey` > `msg.ssh.privateKeyPath` > server key.
+- `privateKeyPath` (and the server's key path) is a file **visible to the Node-RED runtime /
+  container**, not a path on the remote SSH server.
+- old ssh-v2 input `msg.payload = {command, hostname, port, username, password, privateKey}` is
+  accepted for compatibility (`privateKey` there is a path); `msg.ssh` wins over it.
+- hybrid use sends the server's credentials to the host in `msg.ssh` unless you override them.
+
+### output
+
+`msg.session = { code, signal, stdout: [], stderr: [], host: "user@host:port" }`, added to the
+original message (all other properties are kept). Credentials are never copied to the output.
+
+A non-zero exit code is a normal result. Failures go through `done(err)` (use a `catch` node), with
+`err.code`: `SSH_CONFIG`, `SSH_CONNECT`, `SSH_AUTH` or `SSH_EXEC`. They never crash Node-RED.
+
+### connections
+
+- **static** (server only): one connection reused, closed after the node's *Keep open* idle
+  seconds (0 = per message), re-opened if it drops; commands run one at a time, in order.
+- **dynamic / hybrid** (any `msg.ssh` value): a new connection per message, closed when the
+  command finishes. Messages for different hosts run concurrently and never share a connection.
+
+### tests
+
+```bash
+npm test
+```
 
 ### credits
 

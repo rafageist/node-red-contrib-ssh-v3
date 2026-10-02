@@ -106,56 +106,73 @@
 
     <div class="form-row">
         <label for="node-input-keepOpen"><i class="fa fa-clock-o"></i> Keep open</label>
-        <input type="text" id="node-input-keepOpen" placeholder="60" style="width: 80px"> seconds idle (0 = close after each command)
+        <input type="text" id="node-input-keepOpen" placeholder="60" style="width: 80px"> seconds idle (static server only; 0 = close after each command)
     </div>
 
     <div class="form-tips">
-        The server is optional: connection settings can also be sent in <code>msg.ssh</code>,
-        overriding the values of the selected server.
+        The server is optional: connection settings can also be sent per message in <code>msg.ssh</code>,
+        overriding the values of the selected server. Messages with <code>msg.ssh</code> always use their own
+        connection, opened and closed for that message.
     </div>
 </script>
 
 <script type="text/html" data-help-name="ssh-v3">
-    <p>Runs a command on a remote host over SSH.</p>
+    <p>Runs a command on a remote host over SSH. The target can be fixed (server config) or chosen per message
+    (<code>msg.ssh</code>), so one node can run commands on many hosts.</p>
 
     <h3>Inputs</h3>
     <dl class="message-properties">
         <dt>payload <span class="property-type">string</span></dt>
         <dd>command to run.</dd>
         <dt class="optional">ssh <span class="property-type">object</span></dt>
-        <dd>dynamic connection settings. Any property set here overrides the selected
-        server config; missing ones are taken from it. Supported properties:
+        <dd>per-message connection settings. Each property set here overrides the selected server config;
+        properties that are missing, <code>null</code> or empty are taken from it. <code>msg.ssh</code> is not modified.
         <ul>
-            <li><code>host</code> (or <code>hostname</code>), <code>port</code></li>
+            <li><code>host</code> (or <code>hostname</code>), <code>port</code> (default 22)</li>
             <li><code>username</code>, <code>password</code></li>
             <li><code>privateKey</code> &ndash; key content (string or Buffer)</li>
-            <li><code>privateKeyPath</code> &ndash; path to a key file</li>
+            <li><code>privateKeyPath</code> &ndash; path to a key file <b>on the machine/container running Node-RED</b>,
+                not on the remote server</li>
             <li><code>passphrase</code> &ndash; for encrypted keys</li>
-            <li><code>readyTimeout</code>, <code>keepaliveInterval</code>, <code>keepaliveCountMax</code> (ms / count)</li>
+            <li><code>readyTimeout</code>, <code>keepaliveInterval</code> (ms), <code>keepaliveCountMax</code></li>
         </ul>
         </dd>
     </dl>
+    <p>Private key precedence: <code>msg.ssh.privateKey</code> &gt; <code>msg.ssh.privateKeyPath</code> &gt;
+    the server config key.</p>
+    <p>Compatibility: the old ssh-v2 form <code>msg.payload = {command, hostname, port, username, password, privateKey}</code>
+    (where <code>privateKey</code> is a key path) is also accepted; <code>msg.ssh</code> wins over it.</p>
 
     <h3>Outputs</h3>
     <dl class="message-properties">
         <dt>session <span class="property-type">object</span></dt>
-        <dd><code>code</code> exit code, <code>signal</code>, <code>stdout</code> and
-        <code>stderr</code> (arrays of chunks), and <code>host</code> (<code>user@host:port</code>).</dd>
+        <dd><code>code</code> exit code, <code>signal</code> (e.g. <code>"SIGTERM"</code>, or <code>null</code>),
+        <code>stdout</code> and <code>stderr</code> (arrays of chunks), and <code>host</code>
+        (<code>user@host:port</code>). The rest of the input message is passed through unchanged.</dd>
     </dl>
+    <p>A non-zero exit code is a normal result. Failures are raised with <code>done(err)</code>
+    (handle them with a <i>catch</i> node); <code>err.code</code> tells them apart:
+    <code>SSH_CONFIG</code> (missing/invalid settings, unreadable key file), <code>SSH_CONNECT</code>
+    (unreachable host, connection lost), <code>SSH_AUTH</code> (authentication failed),
+    <code>SSH_EXEC</code> (server refused to run the command).</p>
 
-    <h3>Details</h3>
-    <p>Connections are reused per destination and credentials, and closed after being idle for
-    <i>Keep open</i> seconds. A dropped connection is re-opened automatically on the next message.
-    Commands sent to the same connection run one at a time.</p>
-    <p><b>Note:</b> when <code>msg.ssh.host</code> is set and the node also has a server selected,
-    that server's credentials are used for the new host unless <code>msg.ssh</code> provides its own.</p>
+    <h3>Connections</h3>
+    <ul>
+        <li><b>Static</b> (server config only): one connection to that server is reused, closed after
+        <i>Keep open</i> idle seconds and re-opened if it dropped. Commands on it run one at a time, in order.</li>
+        <li><b>Dynamic</b> (any <code>msg.ssh</code> value): a new connection for that message only, closed when the
+        command ends. Messages to different hosts run in parallel.</li>
+    </ul>
+    <p><b>Note:</b> in hybrid use (server config + <code>msg.ssh.host</code>), the server's credentials are sent
+    to the new host unless <code>msg.ssh</code> provides its own.</p>
 
     <h3>Example</h3>
-<pre>msg.payload = "uptime";
+<pre>msg.payload = "hostname";
 msg.ssh = {
-    host: "10.0.0.5",
-    username: "admin",
-    password: "secret"
+    host: "lab.vvm.sr",
+    port: 22,
+    username: "root",
+    privateKeyPath: "/var/lib/odoo/.ssh/id_ed25519"
 };
 return msg;</pre>
 </script>
